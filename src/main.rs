@@ -32,7 +32,15 @@ struct WinSize {
 
 // Components
 #[derive(Component)]
-struct Player;
+struct Player {
+    pub direction: f32,
+}
+
+impl Player {
+    pub fn new() -> Self {
+        Player { direction: 0.0 }
+    }
+}
 // end Components
 
 pub struct KoulesPlugin;
@@ -78,6 +86,9 @@ fn init_ball(mut commands: Commands, win_size: Res<WinSize>) {
         ..shapes::Circle::default()
     };
 
+    let player = Player::new();
+    let transform = Transform::default();
+
     commands
         .spawn_bundle(GeometryBuilder::build_as(
             &shape,
@@ -85,33 +96,38 @@ fn init_ball(mut commands: Commands, win_size: Res<WinSize>) {
                 fill_mode: FillMode::color(Color::GRAY),
                 outline_mode: StrokeMode::new(Color::WHITE, 1.0),
             },
-            Transform::default(),
+            transform,
         ))
-        .insert(Player);
+        .insert(player);
 }
 
 fn keyboard_movement(
     keyboard_input: Res<Input<KeyCode>>,
-    mut query: Query<(&mut Transform, With<Player>)>,
+    mut query: Query<(&mut Transform, &mut Player)>,
 ) {
-    let mut transform = query.single_mut().0;
+    let (mut transform, mut player) = query.single_mut();
 
-    let mut velocity = Vec2::default();
     if keyboard_input.pressed(KeyCode::Right) {
-        velocity.x += 1.0;
-    }
-    if keyboard_input.pressed(KeyCode::Left) {
-        velocity.x -= 1.0;
-    }
-    if keyboard_input.pressed(KeyCode::Up) {
-        velocity.y += 1.0;
-    }
-    if keyboard_input.pressed(KeyCode::Down) {
-        velocity.y -= 1.0;
+        player.direction += 3.0;
     }
 
-    transform.translation.x += velocity.x * SPEED;
-    transform.translation.y += velocity.y * SPEED;
+    if keyboard_input.pressed(KeyCode::Left) {
+        player.direction -= 3.0;
+    }
+
+    let direction = if keyboard_input.pressed(KeyCode::Up) {
+        1.0
+    } else if keyboard_input.pressed(KeyCode::Down) {
+        -1.0
+    } else {
+        0.0
+    };
+
+    let x_movement = player.direction.to_radians().sin() * SPEED * direction;
+    let y_movement = player.direction.to_radians().cos() * SPEED * direction;
+
+    transform.translation.x += x_movement;
+    transform.translation.y += y_movement;
 }
 
 fn mouse_movement(
