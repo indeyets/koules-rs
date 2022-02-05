@@ -61,7 +61,8 @@ impl Plugin for KoulesPlugin {
             })
             .add_startup_stage("setup_game_actors", SystemStage::single(init_ball))
             .add_system(keyboard_movement)
-            .add_system(mouse_movement);
+            .add_system(mouse_movement)
+            .add_system(check_for_game_over);
     }
 }
 
@@ -105,29 +106,29 @@ fn keyboard_movement(
     keyboard_input: Res<Input<KeyCode>>,
     mut query: Query<(&mut Transform, &mut Player)>,
 ) {
-    let (mut transform, mut player) = query.single_mut();
+    if let Ok((mut transform, mut player)) = query.get_single_mut() {
+        if keyboard_input.pressed(KeyCode::Right) {
+            player.direction += 3.0;
+        }
 
-    if keyboard_input.pressed(KeyCode::Right) {
-        player.direction += 3.0;
+        if keyboard_input.pressed(KeyCode::Left) {
+            player.direction -= 3.0;
+        }
+
+        let direction = if keyboard_input.pressed(KeyCode::Up) {
+            1.0
+        } else if keyboard_input.pressed(KeyCode::Down) {
+            -1.0
+        } else {
+            0.0
+        };
+
+        let x_movement = player.direction.to_radians().sin() * SPEED * direction;
+        let y_movement = player.direction.to_radians().cos() * SPEED * direction;
+
+        transform.translation.x += x_movement;
+        transform.translation.y += y_movement;
     }
-
-    if keyboard_input.pressed(KeyCode::Left) {
-        player.direction -= 3.0;
-    }
-
-    let direction = if keyboard_input.pressed(KeyCode::Up) {
-        1.0
-    } else if keyboard_input.pressed(KeyCode::Down) {
-        -1.0
-    } else {
-        0.0
-    };
-
-    let x_movement = player.direction.to_radians().sin() * SPEED * direction;
-    let y_movement = player.direction.to_radians().cos() * SPEED * direction;
-
-    transform.translation.x += x_movement;
-    transform.translation.y += y_movement;
 }
 
 fn cartesian2polar(cart_vec: Vec2) -> Vec2 {
@@ -143,55 +144,80 @@ fn mouse_movement(
     mut query: Query<(&mut Transform, &mut Player)>,
 ) {
     if mouse_input.pressed(MouseButton::Left) {
-        let (mut transform, mut player) = query.single_mut();
+        if let Ok((mut transform, mut player)) = query.get_single_mut() {
+            let dif_x: f32 = mouse.x - transform.translation.x;
+            let dif_y: f32 = mouse.y - transform.translation.y;
 
-        let dif_x: f32 = mouse.x - transform.translation.x;
-        let dif_y: f32 = mouse.y - transform.translation.y;
+            if (dif_x.abs() < SPEED && dif_y.abs() < SPEED) {
+                return;
+            }
 
-        if (dif_x.abs() < SPEED && dif_y.abs() < SPEED) {
-            return;
+            // Find direction towards the mouse cursor
+            let obj_vec = Vec2::new(transform.translation.x, transform.translation.y);
+            let mouse_vec = Vec2::new(mouse.x, mouse.y);
+            let mut direction = 360.0 - cartesian2polar(mouse_vec - obj_vec).y.to_degrees() + 90.0;
+            if direction < 0.0 {
+                direction += 360.0;
+            } else if direction > 360.0 {
+                direction -= 360.0;
+            }
+
+            // Find difference between desired and current direction
+            let mut dif_direction = direction - player.direction;
+
+            // Choose optimal turn direction
+            if dif_direction > 180.0 {
+                dif_direction -= 360.0;
+            } else if dif_direction < -180.0 {
+                dif_direction += 360.0;
+            }
+
+            // Change direction towards the desired one
+            player.direction = if dif_direction.abs() <= 3.0 {
+                player.direction + dif_direction
+            } else if (dif_direction > 0.0) {
+                player.direction + 3.0
+            } else {
+                player.direction - 3.0
+            };
+
+            if (player.direction > 360.0) {
+                player.direction -= 360.0;
+            } else if (player.direction < 0.0) {
+                player.direction += 360.0;
+            }
+
+            // Move the ball
+            let x_movement = player.direction.to_radians().sin() * SPEED;
+            let y_movement = player.direction.to_radians().cos() * SPEED;
+
+            transform.translation.x += x_movement;
+            transform.translation.y += y_movement;
         }
+    }
+}
 
-        // Find direction towards the mouse cursor
-        let obj_vec = Vec2::new(transform.translation.x, transform.translation.y);
-        let mouse_vec = Vec2::new(mouse.x, mouse.y);
-        let mut direction = 360.0 - cartesian2polar(mouse_vec - obj_vec).y.to_degrees() + 90.0;
-        if direction < 0.0 {
-            direction += 360.0;
-        } else if direction > 360.0 {
-            direction -= 360.0;
+fn check_for_game_over(
+    mut commands: Commands,
+    win_size: Res<WinSize>,
+    mut query: Query<(&mut Transform, Entity, With<Player>)>,
+) {
+    if let Ok((mut transform, entity, _)) = query.get_single_mut() {
+        let loc_x = transform.translation.x;
+        let loc_y = transform.translation.y;
+
+        let win_w = win_size.width as f32 / 2.0;
+        let win_h = win_size.height as f32 / 2.0;
+
+        let abs_x = loc_x + win_w;
+        let abs_y = loc_y + win_h;
+
+        if abs_x < BBALL_RADIUS
+            || abs_x > (win_size.width - BBALL_RADIUS)
+            || abs_y < BBALL_RADIUS
+            || abs_y > (win_size.height - BBALL_RADIUS)
+        {
+            commands.entity(entity).despawn();
         }
-
-        // Find difference between desired and current direction
-        let mut dif_direction = direction - player.direction;
-
-        // Choose optimal turn direction
-        if dif_direction > 180.0 {
-            dif_direction -= 360.0;
-        } else if dif_direction < -180.0 {
-            dif_direction += 360.0;
-        }
-
-        // Change direction towards the desired one
-        player.direction = if dif_direction.abs() <= 3.0 {
-            player.direction + dif_direction
-        } else if (dif_direction > 0.0) {
-            player.direction + 3.0
-        } else {
-            player.direction - 3.0
-        };
-
-        if (player.direction > 360.0) {
-            player.direction -= 360.0;
-        } else if (player.direction < 0.0) {
-            player.direction += 360.0;
-        }
-
-        // Move the ball
-        let x_movement = player.direction.to_radians().sin() * SPEED;
-        let y_movement = player.direction.to_radians().cos() * SPEED;
-
-        transform.translation.x += x_movement;
-        transform.translation.y += y_movement;
     }
 }
