@@ -58,7 +58,10 @@ impl Plugin for KoulesPlugin {
                 // we'll write here updated values later
                 width: 800.0,
                 height: 600.0,
-            });
+            })
+            .add_startup_stage("setup_game_actors", SystemStage::single(init_ball))
+            .add_system(keyboard_movement)
+            .add_system(mouse_movement);
     }
 }
 
@@ -70,9 +73,6 @@ fn main() {
         .add_plugin(MousePosPlugin::Orthographic)
         .add_plugin(ShapePlugin)
         .add_startup_system(setup_system)
-        .add_startup_stage("setup_game_actors", SystemStage::single(init_ball))
-        .add_system(keyboard_movement)
-        .add_system(mouse_movement)
         .run();
 }
 
